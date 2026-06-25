@@ -1,4 +1,5 @@
 import type { Tables, TablesInsert, TablesUpdate } from "@/types/database";
+import type { ImageBlobMapping } from "@/components/rich-editor/types";
 
 export enum TaskStatus {
 	TODO = "todo",
@@ -30,7 +31,7 @@ export type TaskUpdate = TablesUpdate<"tasks">;
 
 export type TaskAssign = Tables<"tasks_members"> & Tables<"profiles">;
 
-export type Task = Omit<TaskRow, "status"> & {
+export type Task = Omit<TaskRow, "status" | "priority"> & {
 	status: TaskStatus;
 	priority: TaskPriority;
 	assignees: TaskAssign[];
@@ -45,6 +46,13 @@ export interface CreateTaskFormValues {
 	implementIds: string[];
 	watcherIds: string[];
 	dueDate: string | null;
+}
+
+/** Payload gửi xuống server action tạo task (kèm ảnh rich editor cần upload). */
+export interface CreateTaskPayload extends CreateTaskFormValues {
+	projectId: string;
+	/** Ảnh chèn trong editor (blob URL + File) cần upload lên R2 rồi thay vào html. */
+	images?: ImageBlobMapping[];
 }
 
 /** Tham số truy vấn danh sách công việc. */

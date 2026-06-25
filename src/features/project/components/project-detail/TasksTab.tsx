@@ -30,7 +30,7 @@ import {
 	type TaskStatus,
 } from "./mock-data";
 import { PRIORITY_META, STATUS_META } from "@/features/task/constants";
-import { TaskFormDrawer, type CreateTaskFormValues } from "@/features/task/components";
+import { TaskFormDrawer } from "@/features/task/components";
 
 type ViewMode = "kanban" | "table";
 
@@ -74,23 +74,6 @@ export function TasksTab({ projectId }: TasksTabProps) {
 				t.description?.toLowerCase().includes(q)
 		);
 	}, [search, tasks]);
-
-	const handleCreateTask = (values: CreateTaskFormValues) => {
-		const primaryImplementerId = values.implementIds[0];
-		const newTask = {
-			id: `t${Date.now()}`,
-			title: values.title,
-			description: values.description || undefined,
-			status: values.status,
-			priority: values.priority,
-			assignee: primaryImplementerId
-				? { id: primaryImplementerId, name: `User ${primaryImplementerId.slice(0, 6)}` }
-				: undefined,
-			dueDate: values.dueDate ?? undefined,
-		} as Task;
-		setTasks(prev => [newTask, ...prev]);
-		setDrawerOpen(false);
-	};
 
 	return (
 		<div>
@@ -143,7 +126,7 @@ export function TasksTab({ projectId }: TasksTabProps) {
 				projectId={projectId}
 				open={drawerOpen}
 				onClose={() => setDrawerOpen(false)}
-				onSubmit={handleCreateTask}
+				onCreated={() => setDrawerOpen(false)}
 			/>
 		</div>
 	);

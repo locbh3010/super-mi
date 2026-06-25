@@ -257,36 +257,36 @@ export type Database = {
       }
       tasks: {
         Row: {
-          content: string | null
           created_at: string
           description: string | null
           due_at: string | null
           id: string
           parent_id: string | null
+          priority: string
           progress: number
           project_id: string
           status: string
           title: string
         }
         Insert: {
-          content?: string | null
           created_at?: string
           description?: string | null
           due_at?: string | null
           id?: string
           parent_id?: string | null
+          priority: string
           progress?: number
           project_id: string
           status: string
           title: string
         }
         Update: {
-          content?: string | null
           created_at?: string
           description?: string | null
           due_at?: string | null
           id?: string
           parent_id?: string | null
+          priority?: string
           progress?: number
           project_id?: string
           status?: string

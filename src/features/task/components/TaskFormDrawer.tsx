@@ -13,12 +13,14 @@ import {
 	TASK_FORM_DEFAULTS,
 	TASK_STATUS_OPTIONS,
 } from "../constants";
-import type { CreateTaskFormValues } from "../types";
+import { useCreateTask } from "../hooks";
+import type { CreateTaskFormValues, Task } from "../types";
 
 type TaskFormDrawerProps = {
-	projectId?: string;
+	projectId: string;
 	onClose: VoidFunction;
-	onSubmit: (values: CreateTaskFormValues) => void;
+	/** Gọi sau khi tạo task thành công (vd: parent đóng drawer, refresh). */
+	onCreated?: (task: Task) => void;
 	open: boolean;
 };
 
@@ -38,10 +40,11 @@ export function TaskFormDrawer({
 	projectId,
 	open,
 	onClose,
-	onSubmit,
+	onCreated,
 }: TaskFormDrawerProps) {
 	const [form] = Form.useForm<FormFields>();
-	const [, setImageMappings] = useState<ImageBlobMapping[]>([]);
+	const [imageMappings, setImageMappings] = useState<ImageBlobMapping[]>([]);
+	const { mutateAsync, isPending } = useCreateTask();
 
 	const handleClose = () => {
 		form.resetFields();
@@ -49,12 +52,27 @@ export function TaskFormDrawer({
 		onClose();
 	};
 
-	const handleFinish = (values: FormFields) => {
-		onSubmit({
-			...values,
-			dueDate: values.dueDate ? values.dueDate.format("YYYY-MM-DD") : null,
-		});
-		form.resetFields();
+	const handleFinish = async (values: FormFields) => {
+		const html = values.description ?? "";
+		// Chỉ giữ ảnh còn xuất hiện trong html (ảnh đã xóa khỏi editor thì bỏ).
+		const usedImages = imageMappings.filter(m => html.includes(m.blobUrl));
+
+		try {
+			const task = await mutateAsync({
+				...values,
+				projectId,
+				dueDate: values.dueDate
+					? values.dueDate.format("YYYY-MM-DD")
+					: null,
+				images: usedImages,
+			});
+
+			form.resetFields();
+			setImageMappings([]);
+			onCreated?.(task);
+		} catch {
+			// Lỗi đã được toast trong useCreateTask.onError; giữ nguyên form để thử lại.
+		}
 	};
 
 	const disabledDate: DatePickerProps["disabledDate"] = current => {
@@ -70,8 +88,14 @@ export function TaskFormDrawer({
 			destroyOnHidden
 			footer={
 				<Space style={{ display: "flex", justifyContent: "flex-end" }}>
-					<Button onClick={handleClose}>Hủy</Button>
-					<Button type="primary" onClick={() => form.submit()}>
+					<Button onClick={handleClose} disabled={isPending}>
+						Hủy
+					</Button>
+					<Button
+						type="primary"
+						loading={isPending}
+						onClick={() => form.submit()}
+					>
 						Tạo công việc
 					</Button>
 				</Space>

@@ -77,7 +77,9 @@ export async function createAttachment(
 		throw new Error("Bạn cần đăng nhập để tải tệp lên.");
 	}
 
-	const path = await buildPath(uploaderId, payload.useFor, payload.targetId);
+	const path =
+		payload.path ??
+		(await buildPath(uploaderId, payload.useFor, payload.targetId));
 	const { key, url } = await uploadImage(path, payload.file);
 
 	// filename = tên object trên R2 (phần sau path), không phải tên file gốc.

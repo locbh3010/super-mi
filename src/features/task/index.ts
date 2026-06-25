@@ -8,6 +8,7 @@ export type {
 	GetTasksParams,
 	TaskListResult,
 	CreateTaskFormValues,
+	CreateTaskPayload,
 } from "./types";
 export {
 	KANBAN_COLUMNS,
@@ -19,3 +20,4 @@ export {
 	TASK_FORM_DEFAULTS,
 } from "./constants";
 export { TASK_QUERY_KEYS, tasksQueryOptions, taskByIdQueryOptions } from "./query-options";
+export { useCreateTask } from "./hooks";

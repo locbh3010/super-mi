@@ -21,6 +21,8 @@ export interface CreateAttachmentPayload {
 	filename?: string;
 	/** ID người upload (mặc định lấy user đang đăng nhập). */
 	uploaderId?: string;
+	/** Override thư mục R2 (bỏ qua buildPath mặc định). Eg: `${userId}/projects/${projectId}/tasks/${taskId}`. */
+	path?: string;
 	/** Callback khi có lỗi (trước khi throw), để caller rollback tài nguyên. */
 	onError?: (error: Error) => Promise<void> | void;
 }

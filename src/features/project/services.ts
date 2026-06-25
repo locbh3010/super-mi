@@ -747,15 +747,11 @@ export async function deleteProject(
 	}
 
 	// 4. Dọn folder R2 để xóa file rác (nếu có object không có record DB).
+	// Folder task nằm trong `${user}/project/${projectId}/task/${taskId}` nên
+	// xóa folder project là dọn luôn toàn bộ file task bên trong.
 	await deleteFolder(
 		await buildPath(user.id, AttachmentUseFor.PROJECT, projectId)
 	).catch(() => undefined);
-
-	for (const taskId of taskIds) {
-		await deleteFolder(
-			await buildPath(user.id, AttachmentUseFor.TASK, taskId)
-		).catch(() => undefined);
-	}
 
 	// 5. Xóa tasks_members (nếu có).
 	if (taskIds.length > 0) {
