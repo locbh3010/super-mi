@@ -22,8 +22,7 @@ import { useProjectDetailStyles } from "../../styles";
 import { useProjectMembersTab } from "../../hooks/use-project-members-tab";
 import { useUpdateMemberRole } from "../../hooks/use-update-member-role";
 import { ProjectMemberRole } from "../../types";
-import { ROLE_META } from "./mock-data";
-import type { MemberRole } from "./mock-data";
+import { ROLE_META } from "../../constants";
 import type { ProjectMembersResult } from "../../types";
 import { modal } from "@/components/providers/Providers";
 
@@ -132,7 +131,7 @@ export function MembersTab({
 
 			return options.map(opt => ({
 				key: `role:${opt.key}`,
-				label: ROLE_META[opt.key as MemberRole].label,
+				label: ROLE_META[opt.key].label,
 				disabled: opt.disabled,
 			}));
 		},
@@ -206,7 +205,7 @@ export function MembersTab({
 			key: "role",
 			width: 150,
 			render: (role: string) => {
-				const meta = ROLE_META[role as MemberRole];
+				const meta = ROLE_META[role as ProjectMemberRole];
 				return meta ? (
 					<Tag color={meta.color}>{meta.label}</Tag>
 				) : (

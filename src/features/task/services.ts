@@ -1,6 +1,8 @@
 "use server";
 
 import { createServiceClient } from "@/configs/supabase-service";
+import { fetchList, type QueryFilter } from "@/utils/fetch-list";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
 	AttachmentUseFor,
@@ -8,20 +10,102 @@ import {
 	deleteAttachments,
 } from "../attachment";
 import { getLoggedUser } from "../auth/services";
-import { TaskMemberType } from "./types";
+import { TaskMemberType, TaskPriority, TaskStatus } from "./types";
 import type {
 	CreateTaskPayload,
 	GetTasksParams,
 	Task,
+	TaskAssign,
 	TaskListResult,
+	TaskRow,
 	TaskUpdate,
 } from "./types";
 
+/**
+ * Gắn assignees (tasks_members + profile) vào 1 task row, ép kiểu status/priority.
+ * Dùng chung cho getTasks / updateTask.
+ */
+async function mapTaskWithAssignees(
+	supabase: SupabaseClient,
+	row: TaskRow
+): Promise<Task> {
+	const { data: members } = await supabase
+		.from("tasks_members")
+		.select("*, user:profiles!tasks_members_user_id_fkey(*)")
+		.eq("task_id", row.id);
+
+	const assignees: TaskAssign[] = (members ?? []).map(m => {
+		const { user: profile, ...memberRow } = m as Record<string, unknown> & {
+			user: Record<string, unknown>;
+		};
+		return { ...memberRow, ...profile } as TaskAssign;
+	});
+
+	return {
+		...row,
+		status: row.status as TaskStatus,
+		priority: row.priority as TaskPriority,
+		assignees,
+	};
+}
+
+/**
+ * Lấy danh sách công việc của một dự án (kèm assignees = members + profile).
+ * - Dùng `fetchList` cho filter/search/sort/pagination.
+ * - `status`/`priority` nhận giá trị đơn hoặc mảng (kanban truyền 1 status/cột).
+ */
 export async function getTasks(
-	_params: GetTasksParams
+	params: GetTasksParams
 ): Promise<TaskListResult> {
-	// TODO: implement paginated query with filters
-	return { items: [], total: 0 };
+	const { projectId, page = 1, limit = 20, search, status, priority } = params;
+
+	const supabase = createServiceClient();
+	const user = await getLoggedUser();
+
+	if (!user) {
+		throw new Error("Bạn cần đăng nhập để xem danh sách công việc.");
+	}
+
+	const filters: QueryFilter<TaskRow>[] = [
+		{ key: "project_id", operator: "equal", value: projectId },
+	];
+
+	if (status) {
+		filters.push({
+			key: "status",
+			operator: "in",
+			value: Array.isArray(status) ? status : [status],
+		});
+	}
+
+	if (priority) {
+		filters.push({
+			key: "priority",
+			operator: "in",
+			value: Array.isArray(priority) ? priority : [priority],
+		});
+	}
+
+	const { data, count, error } = await fetchList<TaskRow>(supabase, "tasks", {
+		page,
+		limit,
+		search,
+		searchField: ["title"],
+		orders: { created_at: true },
+		filters,
+	});
+
+	if (error) {
+		throw new Error(error.message ?? "Không thể tải danh sách công việc.");
+	}
+
+	const rows = data ?? [];
+
+	const items = await Promise.all(
+		rows.map(row => mapTaskWithAssignees(supabase, row))
+	);
+
+	return { items, total: count ?? 0 };
 }
 
 export async function getTaskById(_id: string): Promise<Task | null> {
@@ -151,10 +235,29 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
 }
 
 export async function updateTask(
-	_payload: TaskUpdate & { id: string }
+	payload: TaskUpdate & { id: string }
 ): Promise<Task> {
-	// TODO: implement update
-	throw new Error("Not implemented");
+	const admin = createServiceClient();
+	const user = await getLoggedUser();
+
+	if (!user) {
+		throw new Error("Bạn cần đăng nhập để cập nhật công việc.");
+	}
+
+	const { id, ...fields } = payload;
+
+	const { data, error } = await admin
+		.from("tasks")
+		.update(fields)
+		.eq("id", id)
+		.select("*")
+		.single();
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	return mapTaskWithAssignees(admin, data);
 }
 
 export async function deleteTask(_id: string): Promise<void> {

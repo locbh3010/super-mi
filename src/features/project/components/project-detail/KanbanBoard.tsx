@@ -3,75 +3,17 @@
 import { CalendarOutlined } from "@ant-design/icons";
 import type { DropResult } from "@hello-pangea/dnd";
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
-import { Avatar, Badge, Tag, Tooltip } from "antd";
+import { Avatar, Badge, Button, Spin, Tag, Tooltip } from "antd";
 import clsx from "clsx";
 import dayjs from "dayjs";
-import { useCallback } from "react";
 import { useProjectDetailStyles } from "../../styles";
-import {
-	type Task,
-	type TaskStatus,
-} from "./mock-data";
 import { PRIORITY_META, STATUS_META } from "@/features/task/constants";
+import type { KanbanColumnData, Task, TaskStatus } from "@/features/task";
 
-const KANBAN_COLUMNS: TaskStatus[] = ["todo", "in_progress", "review", "done"];
-
-function formatDate(iso: string) {
+function formatDate(iso?: string | null) {
+	if (!iso) return "—";
 	const d = dayjs(iso);
 	return d.isValid() ? d.format("DD/MM/YYYY") : "—";
-}
-
-/**
- * Sắp xếp lại task trong mảng phẳng.
- * @returns mảng mới hoặc tasks cũ nếu không thay đổi
- */
-function reorderTasks(
-	tasks: Task[],
-	sourceId: string,
-	sourceIndex: number,
-	destStatus: TaskStatus,
-	destIndex: number
-): Task[] {
-	// Lọc ra các task của status đích (theo thứ tự hiện tại)
-	const sameStatusTasks = tasks.filter(t => t.status === destStatus);
-
-	// Tìm task được kéo
-	const moved = tasks.find(t => t.id === sourceId);
-	if (!moved) return tasks;
-
-	// Nếu không có thay đổi gì
-	if (moved.status === destStatus && sourceIndex === destIndex) return tasks;
-
-	// Tạo mảng mới không có task được kéo
-	const without = tasks.filter(t => t.id !== sourceId);
-
-	// Cập nhật status nếu khác
-	const updated = { ...moved, status: destStatus };
-
-	// Tìm vị trí cần chèn trong danh sách tổng
-	const sameStatusBefore = sameStatusTasks.slice(0, destIndex);
-	const insertBeforeId = sameStatusBefore.length > 0
-		? sameStatusBefore[sameStatusBefore.length - 1].id
-		: null;
-
-	if (insertBeforeId) {
-		// Chèn sau task cuối cùng trước vị trí đích
-		const insertIdx = without.findIndex(t => t.id === insertBeforeId);
-		const next = [...without];
-		next.splice(insertIdx + 1, 0, updated);
-		return next;
-	} else {
-		// Chèn vào đầu nhóm status đích
-		const firstOfStatus = without.findIndex(t => t.status === destStatus);
-		const next = [...without];
-		if (firstOfStatus === -1) {
-			// Status đích chưa có task nào
-			next.push(updated);
-		} else {
-			next.splice(firstOfStatus, 0, updated);
-		}
-		return next;
-	}
 }
 
 type KanbanCardProps = {
@@ -82,6 +24,8 @@ type KanbanCardProps = {
 function KanbanCard({ task, index }: KanbanCardProps) {
 	const { styles } = useProjectDetailStyles();
 	const priority = PRIORITY_META[task.priority];
+	const assignee = task.assignees[0];
+	const assigneeName = assignee?.display_name || assignee?.email || "";
 
 	return (
 		<Draggable draggableId={task.id} index={index}>
@@ -105,10 +49,13 @@ function KanbanCard({ task, index }: KanbanCardProps) {
 					>
 						<div className={styles.taskCardHead}>
 							<Tag color={priority.color}>{priority.label}</Tag>
-							{task.assignee ? (
-								<Tooltip title={task.assignee.name}>
-									<Avatar size="small">
-										{task.assignee.name.charAt(0).toUpperCase()}
+							{assigneeName ? (
+								<Tooltip title={assigneeName}>
+									<Avatar
+										size="small"
+										src={assignee?.avatar_url ?? undefined}
+									>
+										{assigneeName.charAt(0).toUpperCase()}
 									</Avatar>
 								</Tooltip>
 							) : null}
@@ -116,7 +63,7 @@ function KanbanCard({ task, index }: KanbanCardProps) {
 						<p className={styles.taskTitle}>{task.title}</p>
 						<span className={styles.taskMeta}>
 							<CalendarOutlined />
-							{formatDate(task.dueDate)}
+							{formatDate(task.due_at)}
 						</span>
 					</div>
 				);
@@ -126,16 +73,16 @@ function KanbanCard({ task, index }: KanbanCardProps) {
 }
 
 type KanbanColumnProps = {
-	status: TaskStatus;
-	tasks: Task[];
+	column: KanbanColumnData;
+	onLoadMore: (status: TaskStatus) => void;
 };
 
-function KanbanColumn({ status, tasks }: KanbanColumnProps) {
+function KanbanColumn({ column, onLoadMore }: KanbanColumnProps) {
 	const { styles } = useProjectDetailStyles();
-	const meta = STATUS_META[status];
+	const meta = STATUS_META[column.status];
 
 	return (
-		<Droppable droppableId={status} type="TASK">
+		<Droppable droppableId={column.status} type="TASK">
 			{(provided, snapshot) => (
 				<div
 					ref={provided.innerRef}
@@ -149,15 +96,40 @@ function KanbanColumn({ status, tasks }: KanbanColumnProps) {
 						<span className={styles.kanbanColumnTitle}>
 							<Badge color={meta.color} text={meta.label} />
 						</span>
-						<Tag>{tasks.length}</Tag>
+						<Tag>{column.total}</Tag>
 					</div>
 					<div className={styles.kanbanList}>
-						{tasks.map((task, index) => (
-							<KanbanCard key={task.id} task={task} index={index} />
-						))}
+						{column.isLoading ? (
+							<div className={styles.kanbanEmpty}>
+								<Spin size="small" />
+							</div>
+						) : (
+							column.tasks.map((task, index) => (
+								<KanbanCard
+									key={task.id}
+									task={task}
+									index={index}
+								/>
+							))
+						)}
 						{provided.placeholder}
-						{tasks.length === 0 && !snapshot.isDraggingOver ? (
-							<div className={styles.kanbanEmpty}>Kéo thả vào đây</div>
+						{!column.isLoading &&
+						column.tasks.length === 0 &&
+						!snapshot.isDraggingOver ? (
+							<div className={styles.kanbanEmpty}>
+								Kéo thả vào đây
+							</div>
+						) : null}
+						{column.hasNextPage ? (
+							<Button
+								size="small"
+								type="text"
+								block
+								loading={column.isFetchingNextPage}
+								onClick={() => onLoadMore(column.status)}
+							>
+								Tải thêm
+							</Button>
 						) : null}
 					</div>
 				</div>
@@ -167,48 +139,26 @@ function KanbanColumn({ status, tasks }: KanbanColumnProps) {
 }
 
 type KanbanBoardProps = {
-	tasks: Task[];
-	onTasksChange: (tasks: Task[]) => void;
+	columns: KanbanColumnData[];
+	onDragEnd: (result: DropResult) => void;
+	onLoadMore: (status: TaskStatus) => void;
 };
 
-export function KanbanBoard({ tasks, onTasksChange }: KanbanBoardProps) {
+export function KanbanBoard({
+	columns,
+	onDragEnd,
+	onLoadMore,
+}: KanbanBoardProps) {
 	const { styles } = useProjectDetailStyles();
 
-	const handleDragEnd = useCallback(
-		(result: DropResult) => {
-			const { draggableId, source, destination } = result;
-
-			// Drop ngoài vùng hợp lệ — không làm gì, item tự trở về vị trí cũ
-			if (!destination) return;
-
-			// Drop cùng vị trí — không làm gì
-			if (
-				source.droppableId === destination.droppableId &&
-				source.index === destination.index
-			)
-				return;
-
-			const next = reorderTasks(
-				tasks,
-				draggableId,
-				source.index,
-				destination.droppableId as TaskStatus,
-				destination.index
-			);
-
-			if (next !== tasks) onTasksChange(next);
-		},
-		[tasks, onTasksChange]
-	);
-
 	return (
-		<DragDropContext onDragEnd={handleDragEnd}>
+		<DragDropContext onDragEnd={onDragEnd}>
 			<div className={styles.kanban}>
-				{KANBAN_COLUMNS.map(status => (
+				{columns.map(column => (
 					<KanbanColumn
-						key={status}
-						status={status}
-						tasks={tasks.filter(t => t.status === status)}
+						key={column.status}
+						column={column}
+						onLoadMore={onLoadMore}
 					/>
 				))}
 			</div>

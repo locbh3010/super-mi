@@ -19,5 +19,18 @@ export {
 	TASK_PRIORITY_OPTIONS,
 	TASK_FORM_DEFAULTS,
 } from "./constants";
-export { TASK_QUERY_KEYS, tasksQueryOptions, taskByIdQueryOptions } from "./query-options";
-export { useCreateTask } from "./hooks";
+export {
+	TASK_QUERY_KEYS,
+	TASKS_PAGE_SIZE,
+	tasksQueryOptions,
+	kanbanColumnInfiniteOptions,
+	taskByIdQueryOptions,
+} from "./query-options";
+export {
+	useCreateTask,
+	useUpdateTask,
+	useTasks,
+	useKanbanColumn,
+	useKanbanTasks,
+	type KanbanColumnData,
+} from "./hooks";
