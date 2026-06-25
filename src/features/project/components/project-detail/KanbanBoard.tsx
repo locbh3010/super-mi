@@ -3,7 +3,7 @@
 import { CalendarOutlined } from "@ant-design/icons";
 import type { DropResult } from "@hello-pangea/dnd";
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
-import { Avatar, Badge, Button, Spin, Tag, Tooltip } from "antd";
+import { Avatar, Badge, Button, Space, Spin, Tag, Tooltip } from "antd";
 import clsx from "clsx";
 import dayjs from "dayjs";
 import { useProjectDetailStyles } from "../../styles";
@@ -19,9 +19,18 @@ function formatDate(iso?: string | null) {
 type KanbanCardProps = {
 	task: Task;
 	index: number;
+	onClick: (task: Task) => void;
+	onEdit: (task: Task) => void;
+	onDelete: (task: Task) => void;
 };
 
-function KanbanCard({ task, index }: KanbanCardProps) {
+function KanbanCard({
+	task,
+	index,
+	onClick,
+	onEdit,
+	onDelete,
+}: KanbanCardProps) {
 	const { styles } = useProjectDetailStyles();
 	const priority = PRIORITY_META[task.priority];
 	const assignee = task.assignees[0];
@@ -46,19 +55,27 @@ function KanbanCard({ task, index }: KanbanCardProps) {
 							snapshot.isDragging && styles.kanbanCardDragging
 						)}
 						style={dragStyle as React.CSSProperties}
+						onClick={() => onClick(task)}
 					>
 						<div className={styles.taskCardHead}>
 							<Tag color={priority.color}>{priority.label}</Tag>
-							{assigneeName ? (
-								<Tooltip title={assigneeName}>
-									<Avatar
-										size="small"
-										src={assignee?.avatar_url ?? undefined}
-									>
-										{assigneeName.charAt(0).toUpperCase()}
-									</Avatar>
-								</Tooltip>
-							) : null}
+							<Space size={4}>
+								{assigneeName ? (
+									<Tooltip title={assigneeName}>
+										<Avatar
+											size="small"
+											src={
+												assignee?.avatar_url ??
+												undefined
+											}
+										>
+											{assigneeName
+												.charAt(0)
+												.toUpperCase()}
+										</Avatar>
+									</Tooltip>
+								) : null}
+							</Space>
 						</div>
 						<p className={styles.taskTitle}>{task.title}</p>
 						<span className={styles.taskMeta}>
@@ -75,9 +92,18 @@ function KanbanCard({ task, index }: KanbanCardProps) {
 type KanbanColumnProps = {
 	column: KanbanColumnData;
 	onLoadMore: (status: TaskStatus) => void;
+	onTaskClick: (task: Task) => void;
+	onTaskEdit: (task: Task) => void;
+	onTaskDelete: (task: Task) => void;
 };
 
-function KanbanColumn({ column, onLoadMore }: KanbanColumnProps) {
+function KanbanColumn({
+	column,
+	onLoadMore,
+	onTaskClick,
+	onTaskEdit,
+	onTaskDelete,
+}: KanbanColumnProps) {
 	const { styles } = useProjectDetailStyles();
 	const meta = STATUS_META[column.status];
 
@@ -109,6 +135,9 @@ function KanbanColumn({ column, onLoadMore }: KanbanColumnProps) {
 									key={task.id}
 									task={task}
 									index={index}
+									onClick={onTaskClick}
+									onEdit={onTaskEdit}
+									onDelete={onTaskDelete}
 								/>
 							))
 						)}
@@ -142,12 +171,18 @@ type KanbanBoardProps = {
 	columns: KanbanColumnData[];
 	onDragEnd: (result: DropResult) => void;
 	onLoadMore: (status: TaskStatus) => void;
+	onTaskClick: (task: Task) => void;
+	onTaskEdit: (task: Task) => void;
+	onTaskDelete: (task: Task) => void;
 };
 
 export function KanbanBoard({
 	columns,
 	onDragEnd,
 	onLoadMore,
+	onTaskClick,
+	onTaskEdit,
+	onTaskDelete,
 }: KanbanBoardProps) {
 	const { styles } = useProjectDetailStyles();
 
@@ -159,6 +194,9 @@ export function KanbanBoard({
 						key={column.status}
 						column={column}
 						onLoadMore={onLoadMore}
+						onTaskClick={onTaskClick}
+						onTaskEdit={onTaskEdit}
+						onTaskDelete={onTaskDelete}
 					/>
 				))}
 			</div>

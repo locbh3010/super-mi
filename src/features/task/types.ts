@@ -55,6 +55,14 @@ export interface CreateTaskPayload extends CreateTaskFormValues {
 	images?: ImageBlobMapping[];
 }
 
+/** Payload cập nhật task (form values + id + ảnh mới cần upload). */
+export interface UpdateTaskPayload extends CreateTaskFormValues {
+	id: string;
+	projectId: string;
+	/** Ảnh blob MỚI chèn lúc edit cần upload. Ảnh cũ (public URL) đã nằm trong html. */
+	images?: ImageBlobMapping[];
+}
+
 /** Tham số truy vấn danh sách công việc. */
 export interface GetTasksParams {
 	projectId: string;

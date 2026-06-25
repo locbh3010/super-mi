@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	MoreOutlined,
 	PlusOutlined,
 	ProjectOutlined,
 	SearchOutlined,
@@ -12,7 +13,9 @@ import {
 	Avatar,
 	Badge,
 	Button,
+	Dropdown,
 	Input,
+	Popconfirm,
 	Segmented,
 	Space,
 	Table,
@@ -28,6 +31,7 @@ import { KanbanBoard } from "./KanbanBoard";
 import { PRIORITY_META, STATUS_META } from "@/features/task/constants";
 import {
 	TaskStatus,
+	useDeleteTask,
 	useKanbanTasks,
 	useTasks,
 	useUpdateTask,
@@ -62,11 +66,35 @@ export function TasksTab({ projectId }: TasksTabProps) {
 	const [view, setView] = useState<ViewMode>("kanban");
 	const [search, setSearch] = useState("");
 	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [editingTaskId, setEditingTaskId] = useState<string | undefined>();
 
 	const debouncedSearch = useDebounce(search, { wait: 400 });
 
 	const kanbanColumns = useKanbanTasks(projectId, debouncedSearch);
 	const { mutateAsync: updateTaskAsync } = useUpdateTask();
+	const { mutate: deleteTaskMutate } = useDeleteTask();
+
+	const openCreate = () => {
+		setEditingTaskId(undefined);
+		setDrawerOpen(true);
+	};
+
+	const openEdit = useCallback((task: Task) => {
+		setEditingTaskId(task.id);
+		setDrawerOpen(true);
+	}, []);
+
+	const handleDelete = useCallback(
+		(task: Task) => {
+			deleteTaskMutate({ id: task.id, projectId });
+		},
+		[deleteTaskMutate, projectId]
+	);
+
+	const closeDrawer = () => {
+		setDrawerOpen(false);
+		setEditingTaskId(undefined);
+	};
 
 	// Clone server data -> local để xử lý dnd không phải refetch.
 	const [localColumns, setLocalColumns] =
@@ -180,7 +208,7 @@ export function TasksTab({ projectId }: TasksTabProps) {
 					<Button
 						type="primary"
 						icon={<PlusOutlined />}
-						onClick={() => setDrawerOpen(true)}
+						onClick={openCreate}
 					>
 						Thêm công việc
 					</Button>
@@ -192,16 +220,27 @@ export function TasksTab({ projectId }: TasksTabProps) {
 					columns={boardColumns}
 					onDragEnd={handleDragEnd}
 					onLoadMore={handleLoadMore}
+					onTaskClick={openEdit}
+					onTaskEdit={openEdit}
+					onTaskDelete={handleDelete}
 				/>
 			) : (
-				<TableView projectId={projectId} search={debouncedSearch} />
+				<TableView
+					projectId={projectId}
+					search={debouncedSearch}
+					onRowClick={openEdit}
+					onEdit={openEdit}
+					onDelete={handleDelete}
+				/>
 			)}
 
 			<TaskFormDrawer
 				projectId={projectId}
+				taskId={editingTaskId}
 				open={drawerOpen}
-				onClose={() => setDrawerOpen(false)}
-				onCreated={() => setDrawerOpen(false)}
+				onClose={closeDrawer}
+				onCreated={closeDrawer}
+				onUpdated={closeDrawer}
 			/>
 		</div>
 	);
@@ -212,9 +251,15 @@ const TABLE_PAGE_SIZE = 20;
 function TableView({
 	projectId,
 	search,
+	onRowClick,
+	onEdit,
+	onDelete,
 }: {
 	projectId: string;
 	search?: string;
+	onRowClick: (task: Task) => void;
+	onEdit: (task: Task) => void;
+	onDelete: (task: Task) => void;
 }) {
 	const { styles } = useProjectDetailStyles();
 	const [page, setPage] = useState(1);
@@ -283,6 +328,57 @@ function TableView({
 			width: 130,
 			render: (iso: string) => formatDate(iso),
 		},
+		{
+			title: "Thao tác",
+			key: "actions",
+			width: 80,
+			align: "center",
+			render: (_, record) => (
+				<Dropdown
+					trigger={["click"]}
+					placement="bottomRight"
+					dropdownRender={() => (
+						<div className={styles.cardMenu}>
+							<Button
+								type="text"
+								block
+								style={{ textAlign: "left" }}
+								onClick={e => {
+									e.stopPropagation();
+									onEdit(record);
+								}}
+							>
+								Sửa
+							</Button>
+							<Popconfirm
+								title="Xóa công việc?"
+								description="Hành động này không thể hoàn tác."
+								okText="Xóa"
+								cancelText="Hủy"
+								okButtonProps={{ danger: true }}
+								onConfirm={() => onDelete(record)}
+							>
+								<Button
+									type="text"
+									danger
+									block
+									style={{ textAlign: "left" }}
+									onClick={e => e.stopPropagation()}
+								>
+									Xóa
+								</Button>
+							</Popconfirm>
+						</div>
+					)}
+				>
+					<Button
+						type="text"
+						icon={<MoreOutlined />}
+						onClick={e => e.stopPropagation()}
+					/>
+				</Dropdown>
+			),
+		},
 	];
 
 	return (
@@ -293,6 +389,10 @@ function TableView({
 				dataSource={data?.items ?? []}
 				loading={isFetching}
 				scroll={{ x: "max-content" }}
+				onRow={record => ({
+					onClick: () => onRowClick(record),
+					style: { cursor: "pointer" },
+				})}
 				pagination={{
 					current: page,
 					pageSize: TABLE_PAGE_SIZE,

@@ -3,12 +3,15 @@
 import { createServiceClient } from "@/configs/supabase-service";
 import { fetchList, type QueryFilter } from "@/utils/fetch-list";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ImageBlobMapping } from "@/components/rich-editor/types";
 
 import {
 	AttachmentUseFor,
 	createAttachment,
 	deleteAttachments,
+	getAttachments,
 } from "../attachment";
+import { deleteFolder } from "../attachment/r2";
 import { getLoggedUser } from "../auth/services";
 import { TaskMemberType, TaskPriority, TaskStatus } from "./types";
 import type {
@@ -18,8 +21,47 @@ import type {
 	TaskAssign,
 	TaskListResult,
 	TaskRow,
-	TaskUpdate,
+	UpdateTaskPayload,
 } from "./types";
+
+/** Build R2 path cho ảnh của 1 task: `${user}/project/${projectId}/task/${taskId}`. */
+function taskImagePath(userId: string, projectId: string, taskId: string) {
+	return `${userId}/${AttachmentUseFor.PROJECT}/${projectId}/${AttachmentUseFor.TASK}/${taskId}`;
+}
+
+/**
+ * Upload ảnh blob mới trong html lên R2, thay blobUrl -> public URL.
+ * Trả về { html, attachmentIds } để caller xử lý rollback / reconcile.
+ */
+async function uploadTaskImages(
+	html: string,
+	images: ImageBlobMapping[],
+	opts: { userId: string; projectId: string; taskId: string }
+): Promise<{ html: string; attachmentIds: number[] }> {
+	const used = images.filter(img => html.includes(img.blobUrl));
+	const attachmentIds: number[] = [];
+	let result = html;
+
+	if (used.length === 0) {
+		return { html: result, attachmentIds };
+	}
+
+	const path = taskImagePath(opts.userId, opts.projectId, opts.taskId);
+
+	for (const img of used) {
+		const attachment = await createAttachment({
+			file: img.file,
+			useFor: AttachmentUseFor.TASK,
+			targetId: opts.taskId,
+			uploaderId: opts.userId,
+			path,
+		});
+		attachmentIds.push(attachment.id);
+		result = result.replaceAll(img.blobUrl, attachment.url);
+	}
+
+	return { html: result, attachmentIds };
+}
 
 /**
  * Gắn assignees (tasks_members + profile) vào 1 task row, ép kiểu status/priority.
@@ -108,9 +150,25 @@ export async function getTasks(
 	return { items, total: count ?? 0 };
 }
 
-export async function getTaskById(_id: string): Promise<Task | null> {
-	// TODO: implement single task query
-	return null;
+export async function getTaskById(id: string): Promise<Task | null> {
+	const supabase = createServiceClient();
+	const user = await getLoggedUser();
+
+	if (!user) {
+		throw new Error("Bạn cần đăng nhập để xem công việc.");
+	}
+
+	const { data, error } = await supabase
+		.from("tasks")
+		.select("*")
+		.eq("id", id)
+		.maybeSingle();
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	return data ? mapTaskWithAssignees(supabase, data) : null;
 }
 
 /**
@@ -234,8 +292,12 @@ export async function createTask(payload: CreateTaskPayload): Promise<Task> {
 	};
 }
 
-export async function updateTask(
-	payload: TaskUpdate & { id: string }
+/**
+ * Cập nhật nhanh status 1 task (dùng cho drag-drop kanban — không đụng members/ảnh).
+ */
+export async function updateTaskStatus(
+	id: string,
+	status: TaskStatus
 ): Promise<Task> {
 	const admin = createServiceClient();
 	const user = await getLoggedUser();
@@ -244,11 +306,9 @@ export async function updateTask(
 		throw new Error("Bạn cần đăng nhập để cập nhật công việc.");
 	}
 
-	const { id, ...fields } = payload;
-
 	const { data, error } = await admin
 		.from("tasks")
-		.update(fields)
+		.update({ status })
 		.eq("id", id)
 		.select("*")
 		.single();
@@ -260,7 +320,136 @@ export async function updateTask(
 	return mapTaskWithAssignees(admin, data);
 }
 
-export async function deleteTask(_id: string): Promise<void> {
-	// TODO: implement delete
-	throw new Error("Not implemented");
+/**
+ * Cập nhật task:
+ * - Reconcile ảnh trong html: upload ảnh blob mới, xóa attachment cũ không còn dùng.
+ * - Update fields tasks.
+ * - Reconcile members (diff implement/watcher): xóa member bị bỏ, thêm member mới.
+ */
+export async function updateTask(payload: UpdateTaskPayload): Promise<Task> {
+	const admin = createServiceClient();
+	const user = await getLoggedUser();
+
+	if (!user) {
+		throw new Error("Bạn cần đăng nhập để cập nhật công việc.");
+	}
+
+	const { id, projectId } = payload;
+	let html = payload.description ?? "";
+
+	// 1. Upload ảnh blob mới (nếu có) -> thay public URL vào html.
+	const { html: uploadedHtml } = await uploadTaskImages(
+		html,
+		payload.images ?? [],
+		{ userId: user.id, projectId, taskId: id }
+	);
+	html = uploadedHtml;
+
+	// 2. Xóa attachment cũ mà url không còn xuất hiện trong html mới.
+	const existingAtts = await getAttachments(id, AttachmentUseFor.TASK);
+	const staleIds = existingAtts
+		.filter(a => !html.includes(a.url))
+		.map(a => a.id);
+	if (staleIds.length > 0) {
+		await deleteAttachments(staleIds).catch(() => undefined);
+	}
+
+	// 3. Update fields tasks.
+	const { data, error } = await admin
+		.from("tasks")
+		.update({
+			title: payload.title,
+			description: html,
+			status: payload.status,
+			priority: payload.priority,
+			due_at: payload.dueDate,
+		})
+		.eq("id", id)
+		.select("*")
+		.single();
+
+	if (error) {
+		throw new Error(error.message);
+	}
+
+	// 4. Reconcile members (diff theo user_id + type).
+	const { data: existingMembers } = await admin
+		.from("tasks_members")
+		.select("id, user_id, type")
+		.eq("task_id", id);
+
+	const desired = [
+		...payload.implementIds.map(uid => ({
+			user_id: uid,
+			type: TaskMemberType.IMPLEMENT,
+		})),
+		...payload.watcherIds.map(uid => ({
+			user_id: uid,
+			type: TaskMemberType.WATCHER,
+		})),
+	];
+
+	const keyOf = (m: { user_id: string; type: string }) =>
+		`${m.user_id}:${m.type}`;
+	const existingKeys = new Set((existingMembers ?? []).map(keyOf));
+	const desiredKeys = new Set(desired.map(keyOf));
+
+	const toRemoveIds = (existingMembers ?? [])
+		.filter(m => !desiredKeys.has(keyOf(m)))
+		.map(m => m.id);
+
+	const toInsert = desired
+		.filter(m => !existingKeys.has(keyOf(m)))
+		.map(m => ({ task_id: id, user_id: m.user_id, type: m.type }));
+
+	if (toRemoveIds.length > 0) {
+		await admin.from("tasks_members").delete().in("id", toRemoveIds);
+	}
+	if (toInsert.length > 0) {
+		await admin.from("tasks_members").insert(toInsert);
+	}
+
+	return mapTaskWithAssignees(admin, data);
+}
+
+/**
+ * Xóa task: xóa attachments (R2 + DB) + folder R2 + members + task.
+ * Mirror cleanup trong deleteProject.
+ */
+export async function deleteTask(
+	id: string,
+	projectId: string
+): Promise<void> {
+	const admin = createServiceClient();
+	const user = await getLoggedUser();
+
+	if (!user) {
+		throw new Error("Bạn cần đăng nhập để xóa công việc.");
+	}
+
+	// 1. Xóa attachments của task (R2 + DB).
+	const atts = await getAttachments(id, AttachmentUseFor.TASK);
+	if (atts.length > 0) {
+		await deleteAttachments(atts.map(a => a.id)).catch(() => undefined);
+	}
+
+	// 2. Dọn folder R2 của task (xóa object rác không có record DB).
+	await deleteFolder(taskImagePath(user.id, projectId, id)).catch(
+		() => undefined
+	);
+
+	// 3. Xóa members.
+	await admin
+		.from("tasks_members")
+		.delete()
+		.eq("task_id", id)
+		.then(({ error }) => {
+			if (error) throw new Error(error.message);
+		});
+
+	// 4. Xóa task.
+	const { error } = await admin.from("tasks").delete().eq("id", id);
+	if (error) {
+		throw new Error(error.message);
+	}
 }

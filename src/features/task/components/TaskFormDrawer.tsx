@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DatePickerProps } from "antd";
 import { Button, Col, DatePicker, Drawer, Form, Input, Row, Select, Space } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
+import { useQuery } from "@tanstack/react-query";
 import { MemberSelect } from "@/features/project/components";
 import { RichEditor } from "@/components/rich-editor";
 import type { ImageBlobMapping } from "@/components/rich-editor/types";
@@ -13,14 +14,19 @@ import {
 	TASK_FORM_DEFAULTS,
 	TASK_STATUS_OPTIONS,
 } from "../constants";
-import { useCreateTask } from "../hooks";
+import { useCreateTask, useEditTask } from "../hooks";
+import { taskByIdQueryOptions } from "../query-options";
+import { TaskMemberType } from "../types";
 import type { CreateTaskFormValues, Task } from "../types";
 
 type TaskFormDrawerProps = {
 	projectId: string;
+	/** Có taskId => edit mode (fetch & fill default). */
+	taskId?: string;
 	onClose: VoidFunction;
-	/** Gọi sau khi tạo task thành công (vd: parent đóng drawer, refresh). */
+	/** Gọi sau khi tạo/sửa thành công. */
 	onCreated?: (task: Task) => void;
+	onUpdated?: () => void;
 	open: boolean;
 };
 
@@ -38,13 +44,43 @@ const INITIAL_VALUES: FormFields = {
 
 export function TaskFormDrawer({
 	projectId,
+	taskId,
 	open,
 	onClose,
 	onCreated,
+	onUpdated,
 }: TaskFormDrawerProps) {
 	const [form] = Form.useForm<FormFields>();
 	const [imageMappings, setImageMappings] = useState<ImageBlobMapping[]>([]);
-	const { mutateAsync, isPending } = useCreateTask();
+	const isEdit = !!taskId;
+
+	const { mutateAsync: createAsync, isPending: creating } = useCreateTask();
+	const { mutateAsync: editAsync, isPending: editing } = useEditTask();
+	const isPending = creating || editing;
+
+	// Edit mode: fetch chi tiết task để fill default.
+	const { data: taskDetail } = useQuery({
+		...taskByIdQueryOptions(taskId ?? ""),
+		enabled: open && isEdit,
+	});
+
+	// Fill form khi data về.
+	useEffect(() => {
+		if (!open || !isEdit || !taskDetail) return;
+		form.setFieldsValue({
+			title: taskDetail.title,
+			description: taskDetail.description ?? "",
+			status: taskDetail.status,
+			priority: taskDetail.priority,
+			dueDate: taskDetail.due_at ? dayjs(taskDetail.due_at) : null,
+			implementIds: taskDetail.assignees
+				.filter(a => a.type === TaskMemberType.IMPLEMENT)
+				.map(a => a.user_id),
+			watcherIds: taskDetail.assignees
+				.filter(a => a.type === TaskMemberType.WATCHER)
+				.map(a => a.user_id),
+		});
+	}, [open, isEdit, taskDetail, form]);
 
 	const handleClose = () => {
 		form.resetFields();
@@ -54,24 +90,37 @@ export function TaskFormDrawer({
 
 	const handleFinish = async (values: FormFields) => {
 		const html = values.description ?? "";
-		// Chỉ giữ ảnh còn xuất hiện trong html (ảnh đã xóa khỏi editor thì bỏ).
+		// Chỉ giữ ảnh blob còn xuất hiện trong html cuối cùng.
 		const usedImages = imageMappings.filter(m => html.includes(m.blobUrl));
+		const dueDate = values.dueDate
+			? values.dueDate.format("YYYY-MM-DD")
+			: null;
 
 		try {
-			const task = await mutateAsync({
-				...values,
-				projectId,
-				dueDate: values.dueDate
-					? values.dueDate.format("YYYY-MM-DD")
-					: null,
-				images: usedImages,
-			});
-
-			form.resetFields();
-			setImageMappings([]);
-			onCreated?.(task);
+			if (isEdit && taskId) {
+				await editAsync({
+					...values,
+					id: taskId,
+					projectId,
+					dueDate,
+					images: usedImages,
+				});
+				form.resetFields();
+				setImageMappings([]);
+				onUpdated?.();
+			} else {
+				const task = await createAsync({
+					...values,
+					projectId,
+					dueDate,
+					images: usedImages,
+				});
+				form.resetFields();
+				setImageMappings([]);
+				onCreated?.(task);
+			}
 		} catch {
-			// Lỗi đã được toast trong useCreateTask.onError; giữ nguyên form để thử lại.
+			// Lỗi đã toast trong hook; giữ form để thử lại.
 		}
 	};
 
@@ -81,7 +130,7 @@ export function TaskFormDrawer({
 
 	return (
 		<Drawer
-			title="Thêm công việc"
+			title={isEdit ? "Sửa công việc" : "Thêm công việc"}
 			styles={{ wrapper: { width: 640, maxWidth: "100vw" } }}
 			open={open}
 			onClose={handleClose}
@@ -96,7 +145,7 @@ export function TaskFormDrawer({
 						loading={isPending}
 						onClick={() => form.submit()}
 					>
-						Tạo công việc
+						{isEdit ? "Lưu" : "Tạo công việc"}
 					</Button>
 				</Space>
 			}
@@ -128,7 +177,9 @@ export function TaskFormDrawer({
 				>
 					<RichEditor
 						placeholder="Nhập mô tả chi tiết..."
-						onImageInsert={m => setImageMappings(prev => [...prev, m])}
+						onImageInsert={m =>
+							setImageMappings(prev => [...prev, m])
+						}
 					/>
 				</Form.Item>
 

@@ -9,6 +9,7 @@ export type {
 	TaskListResult,
 	CreateTaskFormValues,
 	CreateTaskPayload,
+	UpdateTaskPayload,
 } from "./types";
 export {
 	KANBAN_COLUMNS,
@@ -29,6 +30,8 @@ export {
 export {
 	useCreateTask,
 	useUpdateTask,
+	useEditTask,
+	useDeleteTask,
 	useTasks,
 	useKanbanColumn,
 	useKanbanTasks,

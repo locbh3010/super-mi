@@ -321,6 +321,15 @@ export const useProjectDetailStyles = createStyles(
 			color: ${token.colorTextTertiary};
 			font-size: 12px;
 		`,
+		cardMenu: css`
+			display: flex;
+			flex-direction: column;
+			min-width: 120px;
+			padding: 4px;
+			background: ${token.colorBgElevated};
+			border-radius: ${token.borderRadiusLG}px;
+			box-shadow: ${token.boxShadowSecondary};
+		`,
 		tableCard: css`
 			border: 1px solid ${token.colorBorderSecondary};
 			border-radius: ${token.borderRadiusLG}px;
