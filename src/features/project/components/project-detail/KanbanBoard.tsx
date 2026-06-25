@@ -1,11 +1,27 @@
 "use client";
 
-import { CalendarOutlined } from "@ant-design/icons";
+import {
+	CalendarOutlined,
+	DeleteOutlined,
+	EditOutlined,
+	MoreOutlined,
+} from "@ant-design/icons";
 import type { DropResult } from "@hello-pangea/dnd";
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
-import { Avatar, Badge, Button, Space, Spin, Tag, Tooltip } from "antd";
+import {
+	Avatar,
+	Badge,
+	Button,
+	Dropdown,
+	Popconfirm,
+	Space,
+	Spin,
+	Tag,
+	Tooltip,
+} from "antd";
 import clsx from "clsx";
 import dayjs from "dayjs";
+import { useState } from "react";
 import { useProjectDetailStyles } from "../../styles";
 import { PRIORITY_META, STATUS_META } from "@/features/task/constants";
 import type { KanbanColumnData, Task, TaskStatus } from "@/features/task";
@@ -14,6 +30,81 @@ function formatDate(iso?: string | null) {
 	if (!iso) return "—";
 	const d = dayjs(iso);
 	return d.isValid() ? d.format("DD/MM/YYYY") : "—";
+}
+
+type TaskActionsMenuProps = {
+	task: Task;
+	onEdit: (task: Task) => void;
+	onDelete: (task: Task) => void;
+};
+
+/** Dropdown Sửa/Xóa dùng chung cho card kanban + row bảng. Popconfirm cho Xóa. */
+export function TaskActionsMenu({ task, onEdit, onDelete }: TaskActionsMenuProps) {
+	const { styles } = useProjectDetailStyles();
+	const [open, setOpen] = useState(false);
+
+	return (
+		<Dropdown
+			open={open}
+			onOpenChange={setOpen}
+			trigger={["click"]}
+			placement="bottomRight"
+			// Drawer có zIndex 1000 → Dropdown phải cao hơn để không bị đè.
+			styles={{ root: { zIndex: 1100 } }}
+			popupRender={() => (
+				<div
+					className={styles.cardMenu}
+					onClick={e => e.stopPropagation()}
+				>
+					<Button
+						type="text"
+						block
+						icon={<EditOutlined />}
+						style={{ textAlign: "left", justifyContent: "flex-start" }}
+						onClick={e => {
+							e.stopPropagation();
+							setOpen(false);
+							onEdit(task);
+						}}
+					>
+						Sửa
+					</Button>
+					<Popconfirm
+						title="Xóa công việc?"
+						description="Hành động này không thể hoàn tác."
+						okText="Xóa"
+						cancelText="Hủy"
+						okButtonProps={{ danger: true }}
+						onConfirm={() => {
+							setOpen(false);
+							onDelete(task);
+						}}
+					>
+						<Button
+							type="text"
+							danger
+							block
+							icon={<DeleteOutlined />}
+							style={{
+								textAlign: "left",
+								justifyContent: "flex-start",
+							}}
+							onClick={e => e.stopPropagation()}
+						>
+							Xóa
+						</Button>
+					</Popconfirm>
+				</div>
+			)}
+		>
+			<Button
+				type="text"
+				size="small"
+				icon={<MoreOutlined />}
+				onClick={e => e.stopPropagation()}
+			/>
+		</Dropdown>
+	);
 }
 
 type KanbanCardProps = {
@@ -75,6 +166,11 @@ function KanbanCard({
 										</Avatar>
 									</Tooltip>
 								) : null}
+								<TaskActionsMenu
+									task={task}
+									onEdit={onEdit}
+									onDelete={onDelete}
+								/>
 							</Space>
 						</div>
 						<p className={styles.taskTitle}>{task.title}</p>

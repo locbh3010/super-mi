@@ -1,7 +1,6 @@
 "use client";
 
 import {
-	MoreOutlined,
 	PlusOutlined,
 	ProjectOutlined,
 	SearchOutlined,
@@ -13,9 +12,7 @@ import {
 	Avatar,
 	Badge,
 	Button,
-	Dropdown,
 	Input,
-	Popconfirm,
 	Segmented,
 	Space,
 	Table,
@@ -27,7 +24,7 @@ import { useDebounce } from "ahooks";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 import { useProjectDetailStyles } from "../../styles";
-import { KanbanBoard } from "./KanbanBoard";
+import { KanbanBoard, TaskActionsMenu } from "./KanbanBoard";
 import { PRIORITY_META, STATUS_META } from "@/features/task/constants";
 import {
 	TaskStatus,
@@ -334,49 +331,11 @@ function TableView({
 			width: 80,
 			align: "center",
 			render: (_, record) => (
-				<Dropdown
-					trigger={["click"]}
-					placement="bottomRight"
-					dropdownRender={() => (
-						<div className={styles.cardMenu}>
-							<Button
-								type="text"
-								block
-								style={{ textAlign: "left" }}
-								onClick={e => {
-									e.stopPropagation();
-									onEdit(record);
-								}}
-							>
-								Sửa
-							</Button>
-							<Popconfirm
-								title="Xóa công việc?"
-								description="Hành động này không thể hoàn tác."
-								okText="Xóa"
-								cancelText="Hủy"
-								okButtonProps={{ danger: true }}
-								onConfirm={() => onDelete(record)}
-							>
-								<Button
-									type="text"
-									danger
-									block
-									style={{ textAlign: "left" }}
-									onClick={e => e.stopPropagation()}
-								>
-									Xóa
-								</Button>
-							</Popconfirm>
-						</div>
-					)}
-				>
-					<Button
-						type="text"
-						icon={<MoreOutlined />}
-						onClick={e => e.stopPropagation()}
-					/>
-				</Dropdown>
+				<TaskActionsMenu
+					task={record}
+					onEdit={onEdit}
+					onDelete={onDelete}
+				/>
 			),
 		},
 	];
